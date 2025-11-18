@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Pruebas Cifrado Asimétrico</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Inter, Arial; background:#f3f6fb; margin:0; padding:20px; }
+    .card { max-width:1000px; margin:20px auto; background:white; padding:18px; border-radius:10px; box-shadow:0 6px 18px rgba(20,30,50,0.08); }
+    h1 { margin:0 0 12px 0; font-size:20px; }
+    .row { display:flex; gap:12px; }
+    .col { flex:1; }
+    label{font-weight:600; font-size:13px;}
+    textarea, input, select { width:100%; padding:10px; margin-top:8px; border-radius:8px; border:1px solid #d1d9e6; font-family:monospace; font-size:13px; }
+    button { padding:10px 12px; border-radius:8px; border:none; cursor:pointer; background:#2563eb; color:white; font-weight:600; margin-top:10px; }
+    button.secondary { background:#10b981; }
+    .small { font-size:12px; color:#475569; margin-top:6px; }
+    pre { background:#0b1220; color:#cbd5e1; padding:10px; border-radius:8px; overflow:auto; max-height:220px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .inline { display:flex; gap:8px; align-items:center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pruebas de Algoritmos Asimétricos</h1>
+
+    <label>Selecciona algoritmo</label>
+    <select id="algo">
+      <option value="">-- elige --</option>
+      <option value="rsa">RSA</option>
+      <option value="dh">Diffie–Hellman</option>
+      <option value="ecc">ECC (ECDH/ECIES)</option>
+      <option value="dsa">DSA (firma)</option>
+      <option value="elgamal">ElGamal (EC)</option>
+    </select>
+
+    <div id="sections" style="margin-top:12px;">
+      <!-- RSA -->
+      <div id="sect-rsa" style="display:none;">
+        <div class="row">
+          <div class="col">
+            <label>Clave pública (PEM)</label>
+            <textarea id="rsaPub" rows="6"></textarea>
+            <div class="controls">
+              <button onclick="generateKey('rsa')">Generar par RSA</button>
+              <button class="secondary" onclick="autofillSample('rsa')">Autofill ejemplo (server)</button>
+            </div>
+          </div>
+          <div class="col">
+            <label>Clave privada (PEM)</label>
+            <textarea id="rsaPriv" rows="6"></textarea>
+            <div class="small">Usa el par para cifrar/descifrar</div>
+          </div>
+        </div>
+
+        <label>Mensaje</label>
+        <textarea id="rsaMsg" rows="3">Hola RSA — prueba</textarea>
+        <div class="controls">
+          <button onclick="rsaEncrypt()">Cifrar</button>
+          <button onclick="rsaDecrypt()">Descifrar</button>
+        </div>
+
+        <label>Salida</label>
+        <pre id="rsaOut"></pre>
+      </div>
+
+      <!-- DH -->
+      <div id="sect-dh" style="display:none;">
+        <div class="row">
+          <div class="col">
+            <label>Parám. y claves (p,g,yours & peer)</label>
+            <textarea id="dhInfo" rows="8" placeholder="Pulse 'Generar DH'"></textarea>
+            <div class="controls">
+              <button onclick="generateKey('dh')">Generar DH (p,g + A/B)</button>
+            </div>
+          </div>
+        </div>
+
+        <label>Selecciona quien cifrará (use A o B)</label>
+        <select id="dhWho"><option value="A">A</option><option value="B">B</option></select>
+
+        <label>Mensaje</label>
+        <textarea id="dhMsg" rows="3">Hola Diffie-Hellman</textarea>
+
+        <div class="controls">
+          <button onclick="dhEncrypt()">Cifrar (derive con quien elijas)</button>
+          <button onclick="dhDecrypt()">Descifrar</button>
+        </div>
+
+        <label>Salida</label>
+        <pre id="dhOut"></pre>
+      </div>
+
+      <!-- ECC -->
+      <div id="sect-ecc" style="display:none;">
+        <div class="row">
+          <div class="col">
+            <label>Clave pública (hex)</label>
+            <textarea id="eccPub" rows="4"></textarea>
+            <div class="controls"><button onclick="generateKey('ecc')">Generar ECC</button></div>
+          </div>
+          <div class="col">
+            <label>Clave privada (hex)</label>
+            <textarea id="eccPriv" rows="4"></textarea>
+          </div>
+        </div>
+
+        <label>Mensaje</label>
+        <textarea id="eccMsg" rows="3">Hola ECC</textarea>
+        <div class="controls">
+          <button onclick="eccEncrypt()">Cifrar (ephemeral -> recipient)</button>
+          <button onclick="eccDecrypt()">Descifrar (recipient)</button>
+        </div>
+        <label>Salida</label><pre id="eccOut"></pre>
+      </div>
+
+      <!-- DSA -->
+      <div id="sect-dsa" style="display:none;">
+        <div class="row">
+          <div class="col">
+            <label>Clave privada (PEM)</label>
+            <textarea id="dsaPriv" rows="5"></textarea>
+            <div class="controls"><button onclick="generateKey('dsa')">Generar DSA</button></div>
+          </div>
+          <div class="col">
+            <label>Clave pública (PEM)</label>
+            <textarea id="dsaPub" rows="5"></textarea>
+          </div>
+        </div>
+
+        <label>Mensaje</label>
+        <textarea id="dsaMsg" rows="3">Mensaje para firmar</textarea>
+        <div class="controls">
+          <button onclick="dsaSign()">Firmar</button>
+          <button onclick="dsaVerify()">Verificar</button>
+        </div>
+        <label>Firma / Resultado</label><pre id="dsaOut"></pre>
+      </div>
+
+      <!-- ElGamal -->
+      <div id="sect-elgamal" style="display:none;">
+        <div class="row">
+          <div class="col">
+            <label>Clave pública (hex)</label>
+            <textarea id="elPub" rows="4"></textarea>
+            <div class="controls"><button onclick="generateKey('elgamal')">Generar ElGamal</button></div>
+          </div>
+          <div class="col">
+            <label>Clave privada (hex)</label>
+            <textarea id="elPriv" rows="4"></textarea>
+          </div>
+        </div>
+
+        <label>Mensaje</label>
+        <textarea id="elMsg" rows="3">Hola ElGamal</textarea>
+        <div class="controls">
+          <button onclick="elgamalEncrypt()">Cifrar</button>
+          <button onclick="elgamalDecrypt()">Descifrar</button>
+        </div>
+
+        <label>Punto R (hex)</label>
+        <textarea id="elR" rows="2"></textarea>
+        <label>Cipher (base64)</label>
+        <textarea id="elCipher" rows="2"></textarea>
+
+        <label>Salida</label>
+        <pre id="elOut"></pre>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <small class="small">Consejo: usa &quot;Generar ...&quot; para crear claves de prueba; luego usa los botones de cifrar/descifrar.</small>
+    </div>
+  </div>
+
+<script>
+  // Mostrar sección según selección
+  const algoSelect = document.getElementById("algo");
+  algoSelect.addEventListener("change", () => {
+    const alg = algoSelect.value;
+    ["rsa","dh","ecc","dsa","elgamal"].forEach(a => {
+      document.getElementById("sect-" + a).style.display = (a === alg ? "block" : "none");
+    });
+    // limpiar outputs
+    ["rsaOut","dhOut","eccOut","dsaOut","elOut"].forEach(id => document.getElementById(id).textContent = "");
+  });
+
+  // GENERAR claves (server)
+  async function generateKey(alg) {
+    const res = await fetch(`/generate/${alg}`, { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) return alert("Error: " + data.error);
+    if (alg === "rsa") {
+      document.getElementById("rsaPub").value = data.publicKey;
+      document.getElementById("rsaPriv").value = data.privateKey;
+      document.getElementById("rsaOut").textContent = JSON.stringify(data, null, 2);
+    } else if (alg === "dh") {
+      document.getElementById("dhInfo").value = JSON.stringify(data, null, 2);
+      document.getElementById("dhOut").textContent = "DH generado (p,g, pares A y B)";
+    } else if (alg === "ecc") {
+      document.getElementById("eccPub").value = data.publicKey;
+      document.getElementById("eccPriv").value = data.privateKey;
+      document.getElementById("eccOut").textContent = JSON.stringify(data, null, 2);
+    } else if (alg === "dsa") {
+      document.getElementById("dsaPub").value = data.publicKey;
+      document.getElementById("dsaPriv").value = data.privateKey;
+      document.getElementById("dsaOut").textContent = "DSA keys generated";
+    } else if (alg === "elgamal") {
+      document.getElementById("elPub").value = data.publicKey;
+      document.getElementById("elPriv").value = data.privateKey;
+      document.getElementById("elOut").textContent = "ElGamal keys generated";
+    }
+  }
+
+  // RSA encrypt/decrypt
+  async function rsaEncrypt() {
+    const publicKey = document.getElementById("rsaPub").value.trim();
+    const message = document.getElementById("rsaMsg").value;
+    const res = await fetch("/rsa/encrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ publicKey, message })
+    });
+    const data = await res.json();
+    document.getElementById("rsaOut").textContent = JSON.stringify(data, null, 2);
+    if (data.ok) document.getElementById("rsaCipher").value = data.cipher;
+  }
+  async function rsaDecrypt() {
+    const privateKey = document.getElementById("rsaPriv").value.trim();
+    const cipher = document.getElementById("rsaOut").textContent ? JSON.parse(document.getElementById("rsaOut").textContent).cipher : null;
+    // allow manual paste
+    const manual = prompt("Pega cipher base64 (Enter para usar último resultado):");
+    const cipherUse = manual ? manual : (document.querySelector("#rsaOut") && JSON.parse(document.getElementById("rsaOut").textContent).cipher);
+    const res = await fetch("/rsa/decrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ privateKey, cipher: cipherUse })
+    });
+    const data = await res.json();
+    document.getElementById("rsaOut").textContent = JSON.stringify(data, null, 2);
+  }
+
+  // DH encrypt/decrypt using generated p,g and keys (use A/B from dhInfo)
+  function parseDH() {
+    try {
+      const obj = JSON.parse(document.getElementById("dhInfo").value);
+      return obj;
+    } catch (e) {
+      return null;
+    }
+  }
+  async function dhEncrypt() {
+    const obj = parseDH();
+    if (!obj) return alert("Genera primero DH y pega JSON en el campo.");
+    const who = document.getElementById("dhWho").value;
+    const me = obj[who];
+    const peer = (who === "A") ? obj.B : obj.A;
+    const res = await fetch("/dh/encrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        p: obj.p,
+        g: obj.g,
+        privateKeyHex: me.private,
+        peerPublicHex: peer.public,
+        message: document.getElementById("dhMsg").value
+      })
+    });
+    const data = await res.json();
+    document.getElementById("dhOut").textContent = JSON.stringify(data, null, 2);
+  }
+  async function dhDecrypt() {
+    const obj = parseDH();
+    if (!obj) return alert("Genera primero DH y pega JSON en el campo.");
+    const who = document.getElementById("dhWho").value;
+    const me = obj[who];
+    const peer = (who === "A") ? obj.B : obj.A;
+    // pedir cipher
+    const cipher = prompt("Pega cipher(base64) para descifrar:");
+    if (!cipher) return;
+    const res = await fetch("/dh/decrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        p: obj.p,
+        g: obj.g,
+        privateKeyHex: me.private,
+        peerPublicHex: peer.public,
+        cipher
+      })
+    });
+    const data = await res.json();
+    document.getElementById("dhOut").textContent = JSON.stringify(data, null, 2);
+  }
+
+  // ECC encrypt/decrypt (ECIES-like)
+  async function eccEncrypt() {
+    const recipientPub = document.getElementById("eccPub").value.trim();
+    if (!recipientPub) return alert("Ingrese clave pública recipient (hex).");
+    const message = document.getElementById("eccMsg").value;
+    const res = await fetch("/ecc/encrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ recipientPublicHex: recipientPub, message })
+    });
+    const data = await res.json();
+    document.getElementById("eccOut").textContent = JSON.stringify(data, null, 2);
+  }
+  async function eccDecrypt() {
+    const recipientPriv = document.getElementById("eccPriv").value.trim();
+    const R = prompt("Pega R (hex) generado por el remitente:");
+    const cipher = prompt("Pega cipher (base64) generado por el remitente:");
+    if (!R || !cipher) return;
+    const res = await fetch("/ecc/decrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ recipientPrivateHex: recipientPriv, R, cipher })
+    });
+    const data = await res.json();
+    document.getElementById("eccOut").textContent = JSON.stringify(data, null, 2);
+  }
+
+  // DSA sign/verify
+  async function dsaSign() {
+    const priv = document.getElementById("dsaPriv").value.trim();
+    const message = document.getElementById("dsaMsg").value;
+    const res = await fetch("/dsa/sign", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ privateKeyPem: priv, message })
+    });
+    const data = await res.json();
+    document.getElementById("dsaOut").textContent = JSON.stringify(data, null, 2);
+  }
+  async function dsaVerify() {
+    const pub = document.getElementById("dsaPub").value.trim();
+    const message = document.getElementById("dsaMsg").value;
+    const signature = prompt("Pega la firma base64 (o deja vacío para usar la última firma mostrada):");
+    const sig = signature ? signature : (JSON.parse(document.getElementById("dsaOut").textContent || "{}").signature || "");
+    const res = await fetch("/dsa/verify", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ publicKeyPem: pub, message, signature: sig })
+    });
+    const data = await res.json();
+    document.getElementById("dsaOut").textContent = JSON.stringify(data, null, 2);
+  }
+
+  // ElGamal encrypt/decrypt
+  async function elgamalEncrypt() {
+    const pub = document.getElementById("elPub").value.trim();
+    const message = document.getElementById("elMsg").value;
+    const res = await fetch("/elgamal/encrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ publicKey: pub, message })
+    });
+    const data = await res.json();
+    if (!data.ok) return alert("Error: " + data.error);
+    document.getElementById("elR").value = data.R;
+    document.getElementById("elCipher").value = data.cipher;
+    document.getElementById("elOut").textContent = JSON.stringify(data, null, 2);
+  }
+  async function elgamalDecrypt() {
+    const priv = document.getElementById("elPriv").value.trim();
+    const R = document.getElementById("elR").value.trim() || prompt("Pega R (hex):");
+    const cipher = document.getElementById("elCipher").value.trim() || prompt("Pega cipher (base64):");
+    if (!priv || !R || !cipher) return alert("Faltan datos");
+    const res = await fetch("/elgamal/decrypt", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ privateKey: priv, R, cipher })
+    });
+    const data = await res.json();
+    document.getElementById("elOut").textContent = JSON.stringify(data, null, 2);
+  }
+
+  // Autofill example: requests server generate for the chosen algorithm
+  async function autofillSample(alg) {
+    await generateKey(alg);
+  }
+</script>
+</body>
+</html>
