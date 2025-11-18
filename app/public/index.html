@@ -253,35 +253,46 @@
     const who = document.getElementById("dhWho").value;
     const me = obj[who];
     const peer = (who === "A") ? obj.B : obj.A;
+
+    // Asegurar que public y private existan
+    if (!me || !me.private || !me.public) return alert("Faltan claves locales (A/B). Genera DH nuevamente.");
+    if (!peer || !peer.public) return alert("Falta la clave pública del peer.");
+
     const res = await fetch("/dh/encrypt", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         p: obj.p,
         g: obj.g,
-        privateKeyHex: me.private,
-        peerPublicHex: peer.public,
+        privateKeyHex: String(me.private).trim(),
+        myPublicHex: String(me.public).trim(),      // <= ahora enviamos nuestra public key para reconstruir contexto
+        peerPublicHex: String(peer.public).trim(),
         message: document.getElementById("dhMsg").value
       })
     });
     const data = await res.json();
     document.getElementById("dhOut").textContent = JSON.stringify(data, null, 2);
   }
-  async function dhDecrypt() {
+   async function dhDecrypt() {
     const obj = parseDH();
     if (!obj) return alert("Genera primero DH y pega JSON en el campo.");
     const who = document.getElementById("dhWho").value;
     const me = obj[who];
     const peer = (who === "A") ? obj.B : obj.A;
-    // pedir cipher
-    const cipher = prompt("Pega cipher(base64) para descifrar:");
+
+    const cipher = prompt("Pega cipher(base64) para descifrar:") || "";
     if (!cipher) return;
+
+    if (!me || !me.private || !me.public) return alert("Faltan claves locales (A/B). Genera DH nuevamente.");
+    if (!peer || !peer.public) return alert("Falta la clave pública del peer.");
+
     const res = await fetch("/dh/decrypt", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         p: obj.p,
         g: obj.g,
-        privateKeyHex: me.private,
-        peerPublicHex: peer.public,
+        privateKeyHex: String(me.private).trim(),
+        myPublicHex: String(me.public).trim(),      // <= enviamos también nuestra public key
+        peerPublicHex: String(peer.public).trim(),
         cipher
       })
     });
@@ -364,6 +375,8 @@
     const data = await res.json();
     document.getElementById("elOut").textContent = JSON.stringify(data, null, 2);
   }
+
+
 
   // Autofill example: requests server generate for the chosen algorithm
   async function autofillSample(alg) {

@@ -1,4 +1,4 @@
-// server.js
+// index.js (reemplaza tu server actual por completo)
 import express from "express";
 import crypto from "crypto";
 import elliptic from "elliptic";
@@ -33,8 +33,9 @@ function aesDecryptRaw(keyBuffer, base64Data) {
 }
 function deriveKeyFromSecretPoint(point) {
   // punto: elliptic point -> derive key from X coordinate
-  const x = point.getX().toArrayLike(Buffer);
-  return crypto.createHash("sha256").update(x).digest(); // 32 bytes
+  // Normalizamos tamaño a 32 bytes (big-endian) para evitar variaciones en longitudes.
+  const xbuf = point.getX().toArrayLike(Buffer, "be", 32);
+  return crypto.createHash("sha256").update(xbuf).digest(); // 32 bytes
 }
 
 /* ---------------- RSA ---------------- */
@@ -76,7 +77,7 @@ app.post("/rsa/decrypt", (req, res) => {
 /* ---------------- Diffie-Hellman ----------------
    Endpoints:
    - /generate/dh -> devuelve p,g y pares A & B (priv/pub hex)
-   - /dh/encrypt -> body: { p,g, private, peerPublic, message } -> devuelve cipher(base64)
+   - /dh/encrypt -> body: { p,g, privateKeyHex, myPublicHex, peerPublicHex, message } -> devuelve cipher(base64)
    - /dh/decrypt -> same fields -> devuelve message
 */
 app.post("/generate/dh", (req, res) => {
@@ -104,11 +105,18 @@ app.post("/generate/dh", (req, res) => {
 
 app.post("/dh/encrypt", (req, res) => {
   try {
-    const { p, g, privateKeyHex, peerPublicHex, message } = req.body;
+    const { p, g, privateKeyHex, myPublicHex, peerPublicHex, message } = req.body;
+
+    if (!p || !g || !privateKeyHex || !myPublicHex || !peerPublicHex) {
+      return res.json({ ok: false, error: "Faltan parámetros p/g/private/myPublic/peerPublic" });
+    }
+
     const dh = crypto.createDiffieHellman(Buffer.from(p, "hex"), Buffer.from(g, "hex"));
-    // set private key (hex)
+    // reconstruct context using both private and public (no generateKeys)
     dh.setPrivateKey(Buffer.from(privateKeyHex, "hex"));
-    // compute secret
+    dh.setPublicKey(Buffer.from(myPublicHex, "hex"));
+
+    // compute secret against peer public
     const secret = dh.computeSecret(Buffer.from(peerPublicHex, "hex"));
     const key = crypto.createHash("sha256").update(secret).digest(); // 32 bytes
     const cipher = aesEncryptRaw(key, message);
@@ -120,9 +128,16 @@ app.post("/dh/encrypt", (req, res) => {
 
 app.post("/dh/decrypt", (req, res) => {
   try {
-    const { p, g, privateKeyHex, peerPublicHex, cipher } = req.body;
+    const { p, g, privateKeyHex, myPublicHex, peerPublicHex, cipher } = req.body;
+
+    if (!p || !g || !privateKeyHex || !myPublicHex || !peerPublicHex || !cipher) {
+      return res.json({ ok: false, error: "Faltan parámetros p/g/private/myPublic/peerPublic/cipher" });
+    }
+
     const dh = crypto.createDiffieHellman(Buffer.from(p, "hex"), Buffer.from(g, "hex"));
     dh.setPrivateKey(Buffer.from(privateKeyHex, "hex"));
+    dh.setPublicKey(Buffer.from(myPublicHex, "hex"));
+
     const secret = dh.computeSecret(Buffer.from(peerPublicHex, "hex"));
     const key = crypto.createHash("sha256").update(secret).digest();
     const message = aesDecryptRaw(key, cipher);
@@ -133,16 +148,17 @@ app.post("/dh/decrypt", (req, res) => {
 });
 
 /* ---------------- ECC (ECDH -> AES) ----------------
-   - /generate/ecc -> devuelve pub (hex) y priv (hex)
-   - /ecc/encrypt -> { senderPrivHex, recipientPubHex, message } -> devuelve { ephemeralPubHex, cipher }
-   - /ecc/decrypt -> { recipientPrivHex, ephemeralPubHex, cipher } -> devuelve message
+   - /generate/ecc -> devuelve pub (hex, uncompressed) y priv (hex)
+   - /ecc/encrypt -> { recipientPublicHex, message } -> { R, cipher }
+   - /ecc/decrypt -> { recipientPrivateHex, R, cipher } -> message
 */
 app.post("/generate/ecc", (req, res) => {
   try {
     const key = ec.genKeyPair();
+    // getPublic(false,'hex') => descomprimido (uncompressed)
     res.json({
       ok: true,
-      publicKey: key.getPublic("hex"),
+      publicKey: key.getPublic(false, "hex"),
       privateKey: key.getPrivate("hex"),
     });
   } catch (err) {
@@ -150,16 +166,15 @@ app.post("/generate/ecc", (req, res) => {
   }
 });
 
-// For ECC we implement ECIES-like: sender generates ephemeral key, derives secret with recipient pub
 app.post("/ecc/encrypt", (req, res) => {
   try {
     const { recipientPublicHex, message } = req.body;
-    // ephemeral key
     const eph = ec.genKeyPair();
-    const Rhex = eph.getPublic("hex");
+    // ephemeral public point - uncompressed
+    const Rhex = eph.getPublic(false, "hex");
     const recipientPoint = ec.keyFromPublic(recipientPublicHex, "hex").getPublic();
     const S = recipientPoint.mul(eph.getPrivate()); // secret point
-    const key = crypto.createHash("sha256").update(Buffer.from(S.getX().toArray())).digest();
+    const key = deriveKeyFromSecretPoint(S);
     const cipher = aesEncryptRaw(key, message);
     res.json({ ok: true, R: Rhex, cipher });
   } catch (err) {
@@ -173,7 +188,7 @@ app.post("/ecc/decrypt", (req, res) => {
     const Rpoint = ec.keyFromPublic(R, "hex").getPublic();
     const priv = ec.keyFromPrivate(recipientPrivateHex, "hex");
     const S = Rpoint.mul(priv.getPrivate());
-    const key = crypto.createHash("sha256").update(Buffer.from(S.getX().toArray())).digest();
+    const key = deriveKeyFromSecretPoint(S);
     const message = aesDecryptRaw(key, cipher);
     res.json({ ok: true, message });
   } catch (err) {
@@ -226,8 +241,8 @@ app.post("/dsa/verify", (req, res) => {
 });
 
 /* ---------------- ElGamal (EC-based) ----------------
-   - /elgamal/generate -> { publicKeyHex, privateKeyHex }
-   - /elgamal/encrypt -> { publicKey, message } -> { R, cipher }
+   - /elgamal/generate -> { publicKeyHex (uncompressed), privateKeyHex }
+   - /elgamal/encrypt -> { publicKey, message } -> { R (uncompressed), cipher }
    - /elgamal/decrypt -> { privateKey, R, cipher } -> message
    Implementation: ephemeral k, R = kG, S = k*P, use S.x hashed -> AES-256
 */
@@ -238,7 +253,8 @@ function elgamalEncrypt(message, recipientPubHex) {
   const S = P.mul(k.getPrivate()); // shared secret point
   const key = deriveKeyFromSecretPoint(S); // 32 bytes
   const cipher = aesEncryptRaw(key, message);
-  return { R: R.encode("hex"), cipher };
+  // R encoded uncompressed (false) to ensure consistent decoding on client
+  return { R: R.encode("hex", false), cipher };
 }
 function elgamalDecrypt(privateHex, Rhex, cipher) {
   const priv = ec.keyFromPrivate(privateHex, "hex");
@@ -251,7 +267,11 @@ function elgamalDecrypt(privateHex, Rhex, cipher) {
 app.post("/elgamal/generate", (req, res) => {
   try {
     const key = ec.genKeyPair();
-    res.json({ ok: true, publicKey: key.getPublic("hex"), privateKey: key.getPrivate("hex") });
+    res.json({
+      ok: true,
+      publicKey: key.getPublic(false, "hex"), // uncompressed
+      privateKey: key.getPrivate("hex"),
+    });
   } catch (err) {
     res.json({ ok: false, error: err.message });
   }
