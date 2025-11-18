@@ -264,18 +264,20 @@ function elgamalDecrypt(privateHex, Rhex, cipher) {
   return aesDecryptRaw(key, cipher);
 }
 
-app.post("/elgamal/generate", (req, res) => {
-  try {
-    const key = ec.genKeyPair();
-    res.json({
-      ok: true,
-      publicKey: key.getPublic(false, "hex"), // uncompressed
-      privateKey: key.getPrivate("hex"),
-    });
-  } catch (err) {
-    res.json({ ok: false, error: err.message });
-  }
+app.post("/generate/elgamal", (req, res) => {
+    try {
+        const key = ec.genKeyPair();
+
+        res.json({
+            ok: true,
+            publicKey: key.getPublic().encode("hex", false),
+            privateKey: key.getPrivate("hex")
+        });
+    } catch (e) {
+        res.json({ ok: false, error: e.message });
+    }
 });
+
 
 app.post("/elgamal/encrypt", (req, res) => {
   try {
